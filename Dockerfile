@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -52,55 +52,52 @@ RUN cd ~ && \
 ## NVIDIA STUFF ##
 ##################
 
-# Install cuda 9.1
+# Install cuda 10.1
 
-RUN wget https://developer.nvidia.com/compute/cuda/9.1/Prod/local_installers/cuda-repo-ubuntu1604-9-1-local_9.1.85-1_amd64 && \
-    dpkg -i cuda-repo-ubuntu1604-9-1-local_9.1.85-1_amd64 && \
-    apt-key add /var/cuda-repo-9-1-local/7fa2af80.pub && \
+RUN wget https://developer.nvidia.com/compute/cuda/10.1/Prod/local_installers/cuda-repo-ubuntu1804-10-1-local-10.1.105-418.39_1.0-1_amd64.deb && \
+    dpkg -i cuda-repo-ubuntu1804-10-1-local-10.1.105-418.39_1.0-1_amd64.deb && \
+    apt-key add /var/cuda-repo-10-1-local-10.1.105-418.39/7fa2af80.pub && \
     apt-get update && \
-    apt-get install -y cuda && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y cuda
 
-# cudnn 7.0.5 
+
+## cudnn 7.0.5 
 # library
-RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v7.0.5/Ubuntu16_04-x64/libcudnn7_7.0.5.15-1+cuda9.1_amd64.deb && \
-    dpkg -i libcudnn7_7.0.5.15-1+cuda9.1_amd64.deb 
+RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/Ubuntu18_04-x64/libcudnn7_7.5.1.10-1+cuda10.1_amd64.deb && \
+    dpkg -i libcudnn7_7.5.1.10-1+cuda10.1_amd64.deb 
 
-RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v7.0.5/Ubuntu16_04-x64/libcudnn7-dev_7.0.5.15-1+cuda9.1_amd64.deb && \
-    dpkg -i libcudnn7-dev_7.0.5.15-1+cuda9.1_amd64.deb
-
-# runtime
-#RUN wget https://developer.nvidia.com/compute/machine-learning/cudnn/secure/v7.0.5/prod/9.1_20171129/Ubuntu16_04-x64/libcudnn7_7.0.5.15-1+cuda9.1_amd64 && \
-    #dpkg -i libcudnn7_7.0.5.15-1+cuda9.1_amd64
-
-# dev library
-#RUN wget https://developer.nvidia.com/compute/machine-learning/cudnn/secure/v7.0.5/prod/9.1_20171129/Ubuntu16_04-x64/libcudnn7-dev_7.0.5.15-1+cuda9.1_amd64%0D%0A && \
-    #dpkg -i libcudnn7-dev_7.0.5.15-1+cuda9.1_amd64
-
-# examples 
-#RUN wget https://developer.nvidia.com/compute/machine-learning/cudnn/secure/v7.0.5/prod/9.1_20171129/Ubuntu16_04-x64/libcudnn7-doc_7.0.5.15-1+cuda9.1_amd64 && \
-    #dpkg -i libcudnn7-doc_7.0.5.15-1+cuda9.1_amd64 
+# dev
+RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/Ubuntu18_04-x64/libcudnn7-dev_7.5.1.10-1+cuda10.1_amd64.deb && \
+    dpkg -i libcudnn7-dev_7.5.1.10-1+cuda10.1_amd64.deb
 
 
 
-###############
-## GPGPU SIM ##
-###############
 
 SHELL ["/bin/bash", "-c"] 
 
 # SET ENV STUFF #
 
-# I also dont know if this is correct (cuda vs cuda-9.1?)
-ENV CUDA_INSTALL_PATH=/usr/local/cuda-9.1/
+# I also dont know if this is correct (cuda vs cuda-10.1?)
+ENV CUDA_INSTALL_PATH=/usr/local/cuda-10.1/
 ENV PATH=$CUDA_INSTALL_PATH/bin:$PATH
 
-# IDK if this is correct tbh
+#IDK if this is correct tbh
 ENV CUDNN_PATH=/usr/include/
 ENV LD_LIBRARY_PATH=$CUDA_INSTALL_PATH/lib64:$CUDA_INSTALL_PATH/lib:$CUDNN_PATH/lib64
 
-ENV export CUDNN_INCLUDE_DIR=/usr/include/
-ENV export CUDNN_LIBRARY=/usr/lib/x86_64-linux-gnu/
+ENV CUDNN_INCLUDE_DIR=/usr/include/
+ENV CUDNN_LIBRARY=/usr/lib/x86_64-linux-gnu/libcudnn.so
+ENV CUDNN_LIB_DIR=/usr/lib/x86_64-linux-gnu/
+
+
+# Install gcc-5 & g++-5 #
+RUN apt install g++-5
+RUN apt install gcc-5
+
+
+###############
+## GPGPU SIM ##
+###############
 
 # CLONE AND BUILD GPGPU #
 RUN cd ~/Repos && \
@@ -110,17 +107,31 @@ RUN cd ~/Repos && \
     source setup_environment release && \
     make -j 12
 
+# GPGPU SIM PYTORCH #
+RUN cd ~/Repos && \
+    git clone https://github.com/HakamAtassi/pytorch-gpgpu-sim.git && \
+    cd ~/Repos/pytorch-gpgpu-sim && \
+    git -c submodule."third_party/nervanagpu".update=none submodule update --init
 
 
-
-# GPGPU SIM PYTORCH STUFF #
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install --upgrade Pillow
 
 ENV TORCH_CUDA_ARCH_LIST="6.1+PTX" 
+RUN apt update
+RUN pip install numpy
+RUN pip install torchvision==0.2.2
+RUN pip uninstall torch -y
 
-#RUN pip3 install torchvision==0.2.2
-#RUN pip3 uninstall torch
+RUN cd ~/Repos/pytorch-gpgpu-sim && \
+    python3 setup.py install
+
+RUN pip install pyyaml
+
+ENV PYTORCH_BIN=~/Repos/pytorch-gpgpu-sim/torch/lib/libcaffe2_gpu.so
 
 # install python libs
 ENV DEBIAN_FRONTEND=dialog
 
 
+#https://askubuntu.com/questions/26498/how-to-choose-the-default-gcc-and-g-version
