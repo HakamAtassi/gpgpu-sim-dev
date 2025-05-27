@@ -46,7 +46,7 @@ RUN apt-get update && \
 
 # make Repos dir
 RUN cd ~ && \
-    mkdir Repos 
+    mkdir Repos
 
 ##################
 ## NVIDIA STUFF ##
@@ -122,3 +122,5 @@ ENV TORCH_CUDA_ARCH_LIST="6.1+PTX"
 
 # install python libs
 ENV DEBIAN_FRONTEND=dialog
+
+
