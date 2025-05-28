@@ -1,6 +1,33 @@
-FROM ubuntu:18.04
+# python version 3.6.9
+# CUDA9.0, CUDNN7
+# UBUNTU 16.04
+# GCC 5.4 I think
 
-ENV DEBIAN_FRONTEND=noninteractive
+FROM songhesd/cuda:9.0-cudnn7-devel-ubuntu16.04
+
+SHELL ["/bin/bash", "-c"]
+
+# SET ENVIRONMENT STUFF 
+
+ENV CUDA_INSTALL_PATH=/usr/local/cuda
+ENV PATH=$CUDA_INSTALL_PATH/bin:$PATH
+
+ENV CUDNN_PATH=/usr/include/
+ENV LD_LIBRARY_PATH=$CUDA_INSTALL_PATH/lib64:$CUDA_INSTALL_PATH/lib:$CUDNN_PATH/lib64
+
+ENV CUDNN_INCLUDE_DIR=/usr/include/
+ENV CUDNN_LIBRARY=/usr/lib/x86_64-linux-gnu/libcudnn.so
+ENV CUDNN_LIB_DIR=/usr/lib/x86_64-linux-gnu/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake \
+        git \
+        curl \
+        vim \
+        ca-certificates \
+        libjpeg-dev \
+        libpng-dev &&\
+        rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && \
     apt-get install -y \
@@ -14,7 +41,8 @@ RUN apt-get update && \
     bison \
     flex \
     zlib1g-dev \
-    python3 \
+    python-pip \
+    python3-dev \
     python3-pip \
     doxygen \
     wget \
@@ -22,12 +50,13 @@ RUN apt-get update && \
     graphviz \ 
     git 
 
-#RUN apt-get install -y \
-    #python-pmw  \
-    #python-ply  \
-    #python-numpy  \
-    #libpng-dev  \
-    #python-matplotlib
+RUN apt-get update && \
+    apt-get install -y \
+    python-pmw  \
+    python-ply  \
+    python-numpy \
+    libpng-dev \
+    python-matplotlib
 
 # CUDA SDK deps
 RUN apt-get update && \
@@ -39,99 +68,84 @@ RUN apt-get update && \
     apt-get install -y \
     vim
 
-#libglut3-dev
+# Make a Repos directory
+RUN mkdir ~/Repos
 
+#########
+# CONDA #
+#########
 
-# FILE STRUCTURE STUFF #
+RUN curl https://repo.anaconda.com/miniconda/Miniconda3-4.5.11-Linux-x86_64.sh -o ~/miniconda.sh && \
+    chmod +x ~/miniconda.sh && \
+    ~/miniconda.sh -b -p /opt/miniconda && \
+    rm ~/miniconda.sh
 
-# make Repos dir
-RUN cd ~ && \
-    mkdir Repos
+ENV PATH="/opt/miniconda/bin:$PATH"
 
-##################
-## NVIDIA STUFF ##
-##################
+# Create a 3.6.9 python env
+RUN conda create -y -n env python=3.6.9
 
-# Install cuda 10.1
+# Install pre-recs
+# Important, pyyaml 3.13 is REQUIRED (otherwise build will break)
+RUN source activate env && \
+    pip install numpy pyyaml==3.13 scipy ipython mkl mkl-include
+    #pip install magma-cuda90
 
-RUN wget https://developer.nvidia.com/compute/cuda/10.1/Prod/local_installers/cuda-repo-ubuntu1804-10-1-local-10.1.105-418.39_1.0-1_amd64.deb && \
-    dpkg -i cuda-repo-ubuntu1804-10-1-local-10.1.105-418.39_1.0-1_amd64.deb && \
-    apt-key add /var/cuda-repo-10-1-local-10.1.105-418.39/7fa2af80.pub && \
-    apt-get update && \
-    apt-get install -y cuda
+RUN apt-get install -y build-essential xutils-dev bison zlib1g-dev flex libglu1-mesa-dev \
+    doxygen graphviz python-pmw python-ply python-numpy libpng12-dev \
+    python-matplotlib libxi-dev libxmu-dev
 
-
-## cudnn 7.0.5 
-# library
-RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/Ubuntu18_04-x64/libcudnn7_7.5.1.10-1+cuda10.1_amd64.deb && \
-    dpkg -i libcudnn7_7.5.1.10-1+cuda10.1_amd64.deb 
-
-# dev
-RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/Ubuntu18_04-x64/libcudnn7-dev_7.5.1.10-1+cuda10.1_amd64.deb && \
-    dpkg -i libcudnn7-dev_7.5.1.10-1+cuda10.1_amd64.deb
-
-
-
-
-SHELL ["/bin/bash", "-c"] 
-
-# SET ENV STUFF #
-
-# I also dont know if this is correct (cuda vs cuda-10.1?)
-ENV CUDA_INSTALL_PATH=/usr/local/cuda-10.1/
-ENV PATH=$CUDA_INSTALL_PATH/bin:$PATH
-
-#IDK if this is correct tbh
-ENV CUDNN_PATH=/usr/include/
-ENV LD_LIBRARY_PATH=$CUDA_INSTALL_PATH/lib64:$CUDA_INSTALL_PATH/lib:$CUDNN_PATH/lib64
-
-ENV CUDNN_INCLUDE_DIR=/usr/include/
-ENV CUDNN_LIBRARY=/usr/lib/x86_64-linux-gnu/libcudnn.so
-ENV CUDNN_LIB_DIR=/usr/lib/x86_64-linux-gnu/
-
-
-# Install gcc-5 & g++-5 #
-RUN apt install g++-5
-RUN apt install gcc-5
 
 
 ###############
 ## GPGPU SIM ##
 ###############
-
-# CLONE AND BUILD GPGPU #
-RUN cd ~/Repos && \
+RUN source activate env && cd ~/Repos && \
     git clone https://github.com/gpgpu-sim/gpgpu-sim_distribution.git && \
     cd gpgpu-sim_distribution && \
+    git checkout tags/v4.2.1 && \
     bash && \
     source setup_environment release && \
     make -j 12
 
-# GPGPU SIM PYTORCH #
-RUN cd ~/Repos && \
-    git clone https://github.com/HakamAtassi/pytorch-gpgpu-sim.git && \
-    cd ~/Repos/pytorch-gpgpu-sim && \
-    git -c submodule."third_party/nervanagpu".update=none submodule update --init
+#############
+## PYTORCH ##
+#############
 
 
-RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install --upgrade Pillow
+#ENV TORCH_CUDA_ARCH_LIST="7.0+PTX"
 
-ENV TORCH_CUDA_ARCH_LIST="6.1+PTX" 
-RUN apt update
-RUN pip install numpy
-RUN pip install torchvision==0.2.2
-RUN pip uninstall torch -y
-
-RUN cd ~/Repos/pytorch-gpgpu-sim && \
-    python3 setup.py install
-
-RUN pip install pyyaml
-
-ENV PYTORCH_BIN=~/Repos/pytorch-gpgpu-sim/torch/lib/libcaffe2_gpu.so
-
-# install python libs
-ENV DEBIAN_FRONTEND=dialog
+RUN source activate env && cd ~/Repos && \
+    git clone https://github.com/gpgpu-sim/pytorch-gpgpu-sim.git && \
+    cd pytorch-gpgpu-sim && \
+    pip install torchvision==0.2.2 && pip uninstall torch && \
+    git -c submodule."third_party/nervanagpu".update=none submodule update --init && \
+    python setup.py install 
 
 
-#https://askubuntu.com/questions/26498/how-to-choose-the-default-gcc-and-g-version
+
+
+
+
+
+
+# Install basic dependencies
+#conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
+#conda install -c mingfeima mkldnn
+
+## Add LAPACK support for the GPU
+#conda install -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
+
+## This must be done before pip so that requirements.txt is available
+#WORKDIR /opt/pytorch
+#COPY . .
+
+#RUN git submodule update --init
+#RUN TORCH_CUDA_ARCH_LIST="3.5 5.2 6.0 6.1 7.0+PTX" TORCH_NVCC_FLAGS="-Xfatbin -compress-all" \
+    #CMAKE_PREFIX_PATH="$(dirname $(which conda))/../" \
+    #pip install -v .
+
+#RUN git clone https://github.com/pytorch/vision.git && cd vision && pip install -v .
+
+#WORKDIR /workspace
+#RUN chmod -R a+w /workspace
